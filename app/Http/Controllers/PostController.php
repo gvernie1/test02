@@ -2,17 +2,24 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Post;
+use App\Entities\Post;
+use Doctrine\ORM\EntityManager;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Log;
 
 class PostController extends Controller
 {
+    private EntityManager $entityManager;
+
+    public function __construct(EntityManager $entityManager)
+    {
+        $this->entityManager = $entityManager;
+    }
+
     public function index()
     {
-        \Log::info('PostController@index called');
-        return Post::all();
+        $posts = $this->entityManager->getRepository(Post::class)->findAll();
+        return response()->json(['data' => $posts]);
     }
 
     public function store(Request $request): JsonResponse
@@ -23,16 +30,20 @@ class PostController extends Controller
                 'content' => 'required'
             ]);
 
-            error_log(print_r($request->all(), true));
+            $post = new Post();
+            $post->setTitle($validated['title']);
+            $post->setContent($validated['content']);
 
-            $post = Post::create([
-                'title' => $validated['title'],
-                'content' => $validated['content']
-            ]);
+            $this->entityManager->persist($post);
+            $this->entityManager->flush();
 
             return response()->json([
                 'message' => 'Post created successfully',
-                'data' => $post
+                'data' => [
+                    'id' => $post->getId(),
+                    'title' => $post->getTitle(),
+                    'content' => $post->getContent()
+                ]
             ], 201);
 
         } catch (\Exception $e) {
@@ -43,25 +54,60 @@ class PostController extends Controller
         }
     }
 
-    public function show(Post $post)
+    public function show(int $id)
     {
-        return $post;
+        $post = $this->entityManager->find(Post::class, $id);
+        
+        if (!$post) {
+            return response()->json(['message' => 'Post not found'], 404);
+        }
+
+        return response()->json(['data' => [
+            'id' => $post->getId(),
+            'title' => $post->getTitle(),
+            'content' => $post->getContent()
+        ]]);
     }
 
-    public function update(Request $request, Post $post)
+    public function update(Request $request, int $id): JsonResponse
     {
+        $post = $this->entityManager->find(Post::class, $id);
+        
+        if (!$post) {
+            return response()->json(['message' => 'Post not found'], 404);
+        }
+
         $validated = $request->validate([
             'title' => 'required|max:255',
             'content' => 'required'
         ]);
 
-        $post->update($validated);
-        return $post;
+        $post->setTitle($validated['title']);
+        $post->setContent($validated['content']);
+        
+        $this->entityManager->flush();
+
+        return response()->json([
+            'message' => 'Post updated successfully',
+            'data' => [
+                'id' => $post->getId(),
+                'title' => $post->getTitle(),
+                'content' => $post->getContent()
+            ]
+        ]);
     }
 
-    public function destroy(Post $post)
+    public function destroy(int $id)
     {
-        $post->delete();
+        $post = $this->entityManager->find(Post::class, $id);
+        
+        if (!$post) {
+            return response()->json(['message' => 'Post not found'], 404);
+        }
+
+        $this->entityManager->remove($post);
+        $this->entityManager->flush();
+
         return response()->noContent();
     }
 } 
